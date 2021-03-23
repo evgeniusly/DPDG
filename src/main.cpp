@@ -15,9 +15,11 @@ const uint8_t SENSOR_2 = A2;
 const uint8_t SENSOR_3 = A3;
 
 const int LEDS_COUNT = 144;
+const int LEDS_TAIL_MIN = 0;
+const int LEDS_TAIL_MAX = LEDS_COUNT / 3;
 
 const double ITERATION_PER_MINUTE_MIN = 1;
-const double ITERATION_PER_MINUTE_MAX = 120;
+const double ITERATION_PER_MINUTE_MAX = 80;
 
 const double VIBRO_PWR_MIN = 0;
 const double VIBRO_PWR_MAX = 255;
@@ -45,7 +47,7 @@ double iteration_progress = 0;
 double space_position = 0;
 float foo = 0;
 
-// double dot_whide = 0.02;
+double dot_whide = 0.02;
 
 // ============================================================
 // HELPERS
@@ -71,10 +73,8 @@ void updateControledParams()
   iteration_per_minute = mapDouble(sensor_0, 0, SENSOR_MAX_VAL, ITERATION_PER_MINUTE_MAX, ITERATION_PER_MINUTE_MIN);
   led_color_hue = map(sensor_1, 0, SENSOR_MAX_VAL, 255, 0);
   led_brightness = map(sensor_2, 0, SENSOR_MAX_VAL, 255, 0);
-  led_tail = map(sensor_3, 0, SENSOR_MAX_VAL, 20, 255);
-  //dot_whide = sensor_3 / SENSOR_MAX_VAL;
-
-  //Serial.println(led_tail);
+  led_tail = map(sensor_3, 0, SENSOR_MAX_VAL, LEDS_TAIL_MAX, LEDS_TAIL_MIN);
+  // Serial.println(iteration_per_minute);
 }
 
 // update current iteration progress
@@ -103,19 +103,40 @@ void updateIterationProgress()
 void updateSpacePosition()
 {
   space_position = (cos(2 * PI * iteration_progress) + 1) / 2; // [0, 1]
+  // Serial.println(String(iteration_progress) + " " + String(space_position));
 }
 
 // LED display update magic
 void proceedLED()
 {
-  led_id_current = int(LEDS_COUNT * space_position);
+  led_id_current = int(round((LEDS_COUNT - 1) * space_position));
 
   if (led_id_current != led_id_previous)
   {
-    //FastLED.clear();
+    FastLED.clear();
     FastLED.setBrightness(led_brightness);
-    fadeToBlackBy(leds, LEDS_COUNT, led_tail);
+
+    // tail part
+    int direction = led_id_current - led_id_previous;
+    direction = (direction > 0) - (direction < 0); // -1 => rtl, 1 => ltr
+    for (int i = 0; i < led_tail; i++)
+    {
+      int led_id = led_id_current - direction * (led_tail - i);
+      if (led_id < 0)
+      {
+        led_id *= -1;
+      }
+      if (led_id > (LEDS_COUNT - 1))
+      {
+        led_id = (LEDS_COUNT - 1) - (led_id - (LEDS_COUNT - 1));
+      }
+      int pow = (double)255 * (i + 1) / (led_tail + 1);
+      leds[led_id] = CHSV(led_color_hue, 255, pow);
+    }
+
+    // lead dot
     leds[led_id_current] = CHSV(led_color_hue, 255, 255);
+
     FastLED.show();
     led_id_previous = led_id_current;
   }
@@ -123,18 +144,18 @@ void proceedLED()
 
 void proceedLEDByPosition()
 {
-  // FastLED.setBrightness(led_brightness);
-  // FastLED.clear();
-  // for (int i = 0; i < LEDS_COUNT; i++)
-  // {
-  //   double led_pos = double(i) / LEDS_COUNT;                  // [0, 1]
-  //   double led_offset_from_dot = abs(space_position - led_pos); // [0, 1]
-  //   double ojfset_coef = min(led_offset_from_dot / dot_whide, 1);
-  //   double power = 255 * (1 - ojfset_coef);
-  //   leds[i] = CHSV(led_color_hue, 255, max(power, 0));
-  //   //Serial.println(power);
-  // }
-  // FastLED.show();
+  FastLED.setBrightness(led_brightness);
+  FastLED.clear();
+  for (int i = 0; i < LEDS_COUNT; i++)
+  {
+    double led_pos = double(i) / (LEDS_COUNT - 1);              // [0, 1]
+    double led_offset_from_dot = abs(space_position - led_pos); // [0, 1]
+    double offset_coef = min(led_offset_from_dot / dot_whide, 1);
+    double power = double(255) * (double(1) - offset_coef);
+    leds[i] = CHSV(led_color_hue, 255, max(power, 0));
+    //Serial.println(power);
+  }
+  FastLED.show();
 }
 
 void proceedVibro()
@@ -211,6 +232,7 @@ void loop()
   updateSpacePosition();
 
   proceedLED();
+  // proceedLEDByPosition();
   // proceedVibro();
   // proceedSound();
 
