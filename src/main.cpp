@@ -1,5 +1,13 @@
 // #include <Arduino.h>
 #include "FastLED.h"
+#include <SPI.h>
+
+//Add the SdFat Libraries
+#include <SdFat.h>
+#include <SdFatUtil.h>
+
+//and the MP3 Shield Library
+#include <SFEMP3Shield.h>
 
 // ============================================================
 // SETTINGS
@@ -13,6 +21,7 @@ const uint8_t SENSOR_0 = A0;
 const uint8_t SENSOR_1 = A1;
 const uint8_t SENSOR_2 = A2;
 const uint8_t SENSOR_3 = A3;
+const uint8_t SENSOR_4 = A4;
 
 const int LEDS_COUNT = 144;
 const int LEDS_TAIL_MIN = 0;
@@ -20,6 +29,9 @@ const int LEDS_TAIL_MAX = LEDS_COUNT / 3;
 
 const double ITERATION_PER_MINUTE_MIN = 1;
 const double ITERATION_PER_MINUTE_MAX = 80;
+
+const double SOUND_VOLUME_MIN = 60; // input values are -1/2dB. e.g. 40 results in -20dB.
+const double SOUND_VOLUME_MAX = 0;  // input values are -1/2dB. e.g. 40 results in -20dB.
 
 const double VIBRO_PWR_MIN = 0;
 const double VIBRO_PWR_MAX = 255;
@@ -45,9 +57,14 @@ double iteration_per_minute = 30;
 double iteration_progress_delta = 0;
 double iteration_progress = 0;
 double space_position = 0;
+double sound_volume_coef = 1;
 float foo = 0;
 
 double dot_whide = 0.02;
+
+SdFat sd;
+SFEMP3Shield MP3player;
+uint8_t result;
 
 // ============================================================
 // HELPERS
@@ -69,12 +86,14 @@ void updateControledParams()
   int sensor_1 = analogRead(SENSOR_1);
   int sensor_2 = analogRead(SENSOR_2);
   int sensor_3 = analogRead(SENSOR_3);
+  int sensor_4 = analogRead(SENSOR_4);
 
   iteration_per_minute = mapDouble(sensor_0, 0, SENSOR_MAX_VAL, ITERATION_PER_MINUTE_MAX, ITERATION_PER_MINUTE_MIN);
   led_color_hue = map(sensor_1, 0, SENSOR_MAX_VAL, 255, 0);
   led_brightness = map(sensor_2, 0, SENSOR_MAX_VAL, 255, 0);
   led_tail = map(sensor_3, 0, SENSOR_MAX_VAL, LEDS_TAIL_MAX, LEDS_TAIL_MIN);
-  // Serial.println(iteration_per_minute);
+  sound_volume_coef = mapDouble(sensor_4, 0, SENSOR_MAX_VAL, 0, 100);
+  // Serial.println(sound_volume_coef);
 }
 
 // update current iteration progress
@@ -173,10 +192,24 @@ void proceedVibro()
 
 void proceedSound()
 {
-  // double sound_left_pwr = mapDouble(1 - space_position, 0, 1, VIBRO_PWR_MIN, VIBRO_PWR_MAX);
-  // double sound_right_pwr = mapDouble(space_position, 0, 1, VIBRO_PWR_MIN, VIBRO_PWR_MAX);
+  double sound_left_pwr = mapDouble(1 - space_position, 0, 1, SOUND_VOLUME_MIN, SOUND_VOLUME_MAX);
+  double sound_right_pwr = mapDouble(space_position, 0, 1, SOUND_VOLUME_MIN, SOUND_VOLUME_MAX);
+  sound_left_pwr += sound_volume_coef;
+  sound_right_pwr += sound_volume_coef;
 
   // Serial.println(sound_left_pwr);
+  MP3player.setVolume(sound_left_pwr, sound_right_pwr); // commit new volume
+
+  if (MP3player.isPlaying() == 0)
+  {
+    result = MP3player.playTrack(2);
+    if (result != 0)
+    {
+      Serial.print(F("Error code: "));
+      Serial.print(result);
+      Serial.println(F(" when trying to play track"));
+    }
+  };
 }
 
 // ============================================================
@@ -221,8 +254,23 @@ void setup()
   // LED setup
   FastLED.addLeds<WS2812B, PIN_LED, GRB>(leds, LEDS_COUNT);
   // FastLED.setCorrection( TypicalLEDStrip );
-  // limit my draw to 1A at 5v of power draw
-  // FastLED.setMaxPowerInVoltsAndMilliamps(5,1000);
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
+
+  //Initialize the SdCard.
+  if (!sd.begin(SD_SEL, SPI_FULL_SPEED))
+    sd.initErrorHalt();
+  // depending upon your SdCard environment, SPI_HAVE_SPEED may work better.
+  if (!sd.chdir("/"))
+    sd.errorHalt("sd.chdir");
+
+  //Initialize the MP3 Player Shield
+  result = MP3player.begin();
+  if (result != 0)
+  {
+    Serial.print(F("Error code: "));
+    Serial.print(result);
+    Serial.println(F(" when trying to start MP3 player"));
+  }
 }
 
 void loop()
@@ -234,7 +282,7 @@ void loop()
   proceedLED();
   // proceedLEDByPosition();
   // proceedVibro();
-  // proceedSound();
+  proceedSound();
 
   // delay(1000.0 / FRAME_RATE); // forced frame rate emulation
 }
