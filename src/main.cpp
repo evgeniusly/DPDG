@@ -1,17 +1,15 @@
-// #include <Arduino.h>
-#include "FastLED.h"
 #include <SPI.h>
-
 //Add the SdFat Libraries
 #include <SdFat.h>
 #include <SdFatUtil.h>
-
 //and the MP3 Shield Library
 #include <SFEMP3Shield.h>
 
 // ============================================================
 // SETTINGS
 // ============================================================
+
+#define MICROLED 1
 
 const uint8_t PIN_LED = 13;
 const uint8_t PIN_VIBRO_LEFT = 9;
@@ -44,7 +42,7 @@ const int SENSOR_MAX_VAL = 1023;
 // VARIABLES
 // ============================================================
 
-CRGB leds[LEDS_COUNT];
+// CRGB leds[LEDS_COUNT];
 int led_id_current = 0;
 int led_id_previous = -1;
 int led_color_hue = 0;
@@ -65,6 +63,23 @@ double dot_whide = 0.02;
 SdFat sd;
 SFEMP3Shield MP3player;
 uint8_t result;
+
+#if defined(MICROLED)
+// ===== ЦВЕТОВАЯ ГЛУБИНА =====
+// 1, 2, 3 (байт на цвет)
+// на меньшем цветовом разрешении скетч будет занимать в разы меньше места,
+// но уменьшится и количество оттенков и уровней яркости!
+// дефайн делается ДО ПОДКЛЮЧЕНИЯ БИБЛИОТЕКИ
+// без него будет 3 байта по умолчанию
+#define COLOR_DEBTH 3
+#include <microLED.h> // подключаем библу
+microLED<LEDS_COUNT, PIN_LED, -1, LED_WS2812, ORDER_GRB, CLI_AVER> strip;
+
+#else
+#include "FastLED.h"
+CRGB leds[LEDS_COUNT];
+
+#endif
 
 // ============================================================
 // HELPERS
@@ -125,8 +140,48 @@ void updateSpacePosition()
   // Serial.println(String(iteration_progress) + " " + String(space_position));
 }
 
+#if defined(MICROLED)
 // LED display update magic
-void proceedLED()
+void proceedLEDmicroLED()
+{
+  led_id_current = int(round((LEDS_COUNT - 1) * space_position));
+
+  if (led_id_current != led_id_previous)
+  {
+    strip.clear();
+    strip.setBrightness(led_brightness);
+
+    // tail part
+    int direction = led_id_current - led_id_previous;
+    direction = (direction > 0) - (direction < 0); // -1 => rtl, 1 => ltr
+    for (int i = 0; i < led_tail; i++)
+    {
+      int led_id = led_id_current - direction * (led_tail - i);
+      if (led_id < 0)
+      {
+        led_id *= -1;
+      }
+      if (led_id > (LEDS_COUNT - 1))
+      {
+        led_id = (LEDS_COUNT - 1) - (led_id - (LEDS_COUNT - 1));
+      }
+      int pow = (double)255 * (i + 1) / (led_tail + 1);
+      // strip.leds[led_id] = mWheel8(led_color_hue, pow);
+      strip.leds[led_id] = mHSV(led_color_hue, 255, pow);
+    }
+
+    // lead dot
+    // strip.leds[led_id_current] = mWheel8(led_color_hue, 255);
+    strip.leds[led_id_current] = mHSV(led_color_hue, 255, 255);
+
+    strip.show();
+    led_id_previous = led_id_current;
+  }
+}
+
+#else
+// LED display update magic
+void proceedLEDFastLED()
 {
   led_id_current = int(round((LEDS_COUNT - 1) * space_position));
 
@@ -160,22 +215,23 @@ void proceedLED()
     led_id_previous = led_id_current;
   }
 }
+#endif
 
-void proceedLEDByPosition()
-{
-  FastLED.setBrightness(led_brightness);
-  FastLED.clear();
-  for (int i = 0; i < LEDS_COUNT; i++)
-  {
-    double led_pos = double(i) / (LEDS_COUNT - 1);              // [0, 1]
-    double led_offset_from_dot = abs(space_position - led_pos); // [0, 1]
-    double offset_coef = min(led_offset_from_dot / dot_whide, 1);
-    double power = double(255) * (double(1) - offset_coef);
-    leds[i] = CHSV(led_color_hue, 255, max(power, 0));
-    //Serial.println(power);
-  }
-  FastLED.show();
-}
+// void proceedLEDByPosition()
+// {
+//   FastLED.setBrightness(led_brightness);
+//   FastLED.clear();
+//   for (int i = 0; i < LEDS_COUNT; i++)
+//   {
+//     double led_pos = double(i) / (LEDS_COUNT - 1);              // [0, 1]
+//     double led_offset_from_dot = abs(space_position - led_pos); // [0, 1]
+//     double offset_coef = min(led_offset_from_dot / dot_whide, 1);
+//     double power = double(255) * (double(1) - offset_coef);
+//     leds[i] = CHSV(led_color_hue, 255, max(power, 0));
+//     //Serial.println(power);
+//   }
+//   FastLED.show();
+// }
 
 void proceedVibro()
 {
@@ -252,9 +308,13 @@ void setup()
   pinMode(PIN_VIBRO_RIGHT, OUTPUT);
 
   // LED setup
+#if defined(MICROLED)
+  strip.setMaxCurrent(2000);
+#else
   FastLED.addLeds<WS2812B, PIN_LED, GRB>(leds, LEDS_COUNT);
   // FastLED.setCorrection( TypicalLEDStrip );
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
+#endif
 
   //Initialize the SdCard.
   if (!sd.begin(SD_SEL, SPI_FULL_SPEED))
@@ -279,8 +339,14 @@ void loop()
   updateIterationProgress();
   updateSpacePosition();
 
-  proceedLED();
+#if defined(MICROLED)
+  proceedLEDmicroLED();
+#else
+  proceedLEDFastLED();
+#endif
+
   // proceedLEDByPosition();
+
   // proceedVibro();
   proceedSound();
 
