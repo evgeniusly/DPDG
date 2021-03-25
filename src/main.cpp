@@ -15,6 +15,9 @@ const uint8_t PIN_LED = 13;
 const uint8_t PIN_VIBRO_LEFT = 11;
 const uint8_t PIN_VIBRO_RIGHT = 12;
 
+const uint8_t PIN_BTN_PREV = 3;
+const uint8_t PIN_BTN_NEXT = 4;
+
 const uint8_t SENSOR_0 = A0;
 const uint8_t SENSOR_1 = A1;
 const uint8_t SENSOR_2 = A2;
@@ -58,9 +61,15 @@ double space_position = 0;
 double sound_volume_coef = 1;
 float foo = 0;
 
+bool btn_is_active = false;
+
 double dot_whide = 0.02;
 
+int files_count = 0;
+int audio_index = 1;
+
 SdFat sd;
+SdFile file;
 SFEMP3Shield MP3player;
 uint8_t result;
 
@@ -94,6 +103,46 @@ double mapDouble(double x, double in_min, double in_max, double out_min, double 
 // ============================================================
 // FUNCS
 // ============================================================
+
+void playNext()
+{
+  audio_index++;
+  if (audio_index > files_count)
+    audio_index = 1;
+  MP3player.stopTrack();
+  MP3player.playTrack(audio_index);
+}
+void playPrev()
+{
+  audio_index--;
+  if (audio_index < 1)
+    audio_index = files_count;
+  MP3player.stopTrack();
+  MP3player.playTrack(audio_index);
+}
+
+void checkButtons()
+{
+  int btn_prev_state = digitalRead(PIN_BTN_PREV);
+  int btn_next_state = digitalRead(PIN_BTN_NEXT);
+
+  if (btn_prev_state == HIGH && !btn_is_active)
+  {
+    btn_is_active = true;
+    playPrev();
+  }
+
+  if (btn_next_state == HIGH && !btn_is_active)
+  {
+    btn_is_active = true;
+    playNext();
+  }
+
+  if (btn_prev_state == LOW && btn_next_state == LOW && btn_is_active)
+  {
+    btn_is_active = false;
+  }
+}
 
 void updateControledParams()
 {
@@ -258,13 +307,7 @@ void proceedSound()
 
   if (MP3player.isPlaying() == 0)
   {
-    result = MP3player.playTrack(2);
-    if (result != 0)
-    {
-      Serial.print(F("Error code: "));
-      Serial.print(result);
-      Serial.println(F(" when trying to play track"));
-    }
+    MP3player.playTrack(audio_index);
   };
 }
 
@@ -307,6 +350,9 @@ void setup()
   pinMode(PIN_VIBRO_LEFT, OUTPUT);
   pinMode(PIN_VIBRO_RIGHT, OUTPUT);
 
+  pinMode(PIN_BTN_PREV, INPUT);
+  pinMode(PIN_BTN_NEXT, INPUT);
+
   // LED setup
 #if defined(MICROLED)
   strip.setMaxCurrent(2000);
@@ -323,18 +369,31 @@ void setup()
   if (!sd.chdir("/"))
     sd.errorHalt("sd.chdir");
 
+  sd.vwd()->rewind();
+  while (file.openNext(sd.vwd(), O_READ))
+  {
+    if (file.isFile())
+    {
+      files_count++;
+    }
+    file.close();
+  }
+  // Serial.println(files_count);
+
   //Initialize the MP3 Player Shield
   result = MP3player.begin();
-  if (result != 0)
-  {
-    Serial.print(F("Error code: "));
-    Serial.print(result);
-    Serial.println(F(" when trying to start MP3 player"));
-  }
+  // if (result != 0)
+  // {
+  //   Serial.print(F("Error code: "));
+  //   Serial.print(result);
+  //   Serial.println(F(" when trying to start MP3 player"));
+  // }
 }
 
 void loop()
 {
+  checkButtons();
+
   updateControledParams();
   updateIterationProgress();
   updateSpacePosition();
