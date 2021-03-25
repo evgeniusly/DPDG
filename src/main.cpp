@@ -12,8 +12,8 @@
 #define MICROLED 1
 
 const uint8_t PIN_LED = 13;
-const uint8_t PIN_VIBRO_LEFT = 9;
-const uint8_t PIN_VIBRO_RIGHT = 10;
+const uint8_t PIN_VIBRO_LEFT = 11;
+const uint8_t PIN_VIBRO_RIGHT = 12;
 
 const uint8_t SENSOR_0 = A0;
 const uint8_t SENSOR_1 = A1;
@@ -32,7 +32,7 @@ const double SOUND_VOLUME_MIN = 60; // input values are -1/2dB. e.g. 40 results 
 const double SOUND_VOLUME_MAX = 0;  // input values are -1/2dB. e.g. 40 results in -20dB.
 
 const double VIBRO_PWR_MIN = 0;
-const double VIBRO_PWR_MAX = 255;
+const double VIBRO_PWR_MAX = 200;
 
 // const int FRAME_RATE = 300;
 
@@ -347,7 +347,7 @@ void loop()
 
   // proceedLEDByPosition();
 
-  // proceedVibro();
+  proceedVibro();
   proceedSound();
 
   // delay(1000.0 / FRAME_RATE); // forced frame rate emulation
