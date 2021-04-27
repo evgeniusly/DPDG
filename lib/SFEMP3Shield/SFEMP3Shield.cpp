@@ -1981,7 +1981,7 @@ void SFEMP3Shield::refill() {
 
   // no need to keep interrupts blocked, allow other ISR such as timer0 to continue
 #if !defined(USE_MP3_REFILL_MEANS) || USE_MP3_REFILL_MEANS == USE_MP3_INTx
-  sei();
+  interrupts();
 #endif
 
   while(digitalRead(MP3_DREQ)) {
@@ -2003,7 +2003,7 @@ void SFEMP3Shield::refill() {
 
     //Once DREQ is released (high) we now feed 32 bytes of data to the VS1053 from our SD read buffer
 #if !defined(USE_MP3_REFILL_MEANS) || USE_MP3_REFILL_MEANS == USE_MP3_INTx
-    cli(); // allow transfer to occur with out interruption.
+    noInterrupts(); // allow transfer to occur with out interruption.
 #endif
     dcs_low(); //Select Data
     for(uint8_t y = 0 ; y < sizeof(mp3DataBuffer) ; y++) {
@@ -2014,7 +2014,7 @@ void SFEMP3Shield::refill() {
     dcs_high(); //Deselect Data
     //We've just dumped 32 bytes into VS1053 so our SD read buffer is empty. go get more data
 #if !defined(USE_MP3_REFILL_MEANS) || USE_MP3_REFILL_MEANS == USE_MP3_INTx
-    sei();
+    interrupts();
 #endif
   }
 
@@ -2050,7 +2050,7 @@ void SFEMP3Shield::SendSingleMIDInote() {
   while(!digitalRead(MP3_DREQ)); 
 
 #if !defined(USE_MP3_REFILL_MEANS) || USE_MP3_REFILL_MEANS == USE_MP3_INTx
-  cli(); // allow transfer to occur with out interruption.
+  noInterrupts(); // allow transfer to occur with out interruption.
 #endif
 
   dcs_low(); //Select Data
@@ -2064,7 +2064,7 @@ void SFEMP3Shield::SendSingleMIDInote() {
   dcs_high(); //Deselect Data
 
 #if !defined(USE_MP3_REFILL_MEANS) || USE_MP3_REFILL_MEANS == USE_MP3_INTx
-  sei();  // renable interrupts for other processes
+  interrupts();  // renable interrupts for other processes
 #endif
 
   flush_cancel(none); // need to quickly purge the exiting format of decoder.

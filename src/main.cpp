@@ -1,15 +1,13 @@
 #include <SPI.h>
-#include <SdFat.h>
-#include <SdFatUtil.h>
-#include <SFEMP3Shield.h>
 
 // ============================================================
 // SETTINGS
 // ============================================================
 
-#define MICROLED 1
+// #define USE_MICROLED 1
+#define USE_SFEMP3Shield 1
 
-const uint8_t PIN_LED = 13;
+const uint8_t A_PIN_LED = 13;
 const uint8_t PIN_VIBRO_LEFT = 11;
 const uint8_t PIN_VIBRO_RIGHT = 12;
 
@@ -58,20 +56,30 @@ float foo = 0;
 
 bool btn_is_active = false;
 
-double dot_whide = 0.02;
+// double dot_whide = 0.02;
 
+// ============================================================
+// AUDIO
+// ============================================================
+
+#if defined(USE_SFEMP3Shield)
+#include <SdFat.h>
+#include <SdFatUtil.h>
+#include <SFEMP3Shield.h>
 int files_count = 0;
 int audio_index = 1;
-
+unsigned long time_from_start_sound = 0;
+unsigned long time_from_start_prev_sound = 0;
 SdFat sd;
 SdFile file;
 SFEMP3Shield MP3player;
+#endif
 
 // ============================================================
 // LED
 // ============================================================
 
-#if defined(MICROLED)
+#if defined(USE_MICROLED)
 // ===== ЦВЕТОВАЯ ГЛУБИНА =====
 // 1, 2, 3 (байт на цвет)
 // на меньшем цветовом разрешении скетч будет занимать в разы меньше места,
@@ -81,7 +89,7 @@ SFEMP3Shield MP3player;
 #define COLOR_DEBTH 3
 #include <microLED.h> // подключаем библу
 // CLI_OFF CLI_LOW CLI_AVER CLI_HIGH
-microLED<LEDS_COUNT, PIN_LED, -1, LED_WS2812, ORDER_GRB, CLI_HIGH> strip;
+microLED<LEDS_COUNT, A_PIN_LED, -1, LED_WS2812, ORDER_GRB, CLI_HIGH> strip;
 
 #else
 #include "FastLED.h"
@@ -103,6 +111,7 @@ double mapDouble(double x, double in_min, double in_max, double out_min, double 
 // FUNCS
 // ============================================================
 
+#if defined(USE_SFEMP3Shield)
 void playNext()
 {
   audio_index++;
@@ -119,9 +128,15 @@ void playPrev()
   MP3player.stopTrack();
   MP3player.playTrack(audio_index);
 }
+#endif
+
+// ============================================================
+// LISTNERS
+// ============================================================
 
 void checkButtons()
 {
+#if defined(USE_SFEMP3Shield)
   int btn_prev_state = digitalRead(PIN_BTN_PREV);
   int btn_next_state = digitalRead(PIN_BTN_NEXT);
 
@@ -141,6 +156,7 @@ void checkButtons()
   {
     btn_is_active = false;
   }
+#endif
 }
 
 void updateControledParams()
@@ -156,8 +172,18 @@ void updateControledParams()
   led_brightness = map(sensor_2, 0, SENSOR_MAX_VAL, 255, 0);
   led_tail = map(sensor_3, 0, SENSOR_MAX_VAL, LEDS_TAIL_MAX, LEDS_TAIL_MIN);
   sound_volume_coef = mapDouble(sensor_4, 0, SENSOR_MAX_VAL, 0, 100);
+
+  // led_color_hue = 100;
+  // led_brightness = 100;
+  // led_tail = 10;
+  // iteration_per_minute = 20;
+  // sound_volume_coef = 50;
   // Serial.println(sound_volume_coef);
 }
+
+// ============================================================
+// POSITION PROGRESS
+// ============================================================
 
 // update current iteration progress
 // based on time from last tick
@@ -183,8 +209,11 @@ void updateSpacePosition()
   // Serial.println(String(iteration_progress) + " " + String(space_position));
 }
 
-#if defined(MICROLED)
-// LED display update magic
+// ============================================================
+// LED MAGIC
+// ============================================================
+
+#if defined(USE_MICROLED)
 void proceedLEDmicroLED()
 {
   led_id_current = int(round((LEDS_COUNT - 1) * space_position));
@@ -276,33 +305,45 @@ void proceedLEDFastLED()
 //   FastLED.show();
 // }
 
+// ============================================================
+// VIBRO MAGIC
+// ============================================================
+
 void proceedVibro()
 {
-  // double vibro_left_pwr = ((1 - space_position) * (255 - VIBRO_PWR_MIN)) + VIBRO_PWR_MIN;
-  // double vibro_right_pwr = (space_position * (255 - VIBRO_PWR_MIN)) + VIBRO_PWR_MIN;
   double vibro_left_pwr = mapDouble(1 - space_position, 0, 1, VIBRO_PWR_MIN, VIBRO_PWR_MAX);
   double vibro_right_pwr = mapDouble(space_position, 0, 1, VIBRO_PWR_MIN, VIBRO_PWR_MAX);
 
   analogWrite(PIN_VIBRO_LEFT, vibro_left_pwr);
   analogWrite(PIN_VIBRO_RIGHT, vibro_right_pwr);
-
-  // Serial.println(vibro_left_pwr);
 }
 
+// ============================================================
+// AUDIO MAGIC
+// ============================================================
+
+#if defined(USE_SFEMP3Shield)
 void proceedSound()
 {
-  double sound_left_pwr = mapDouble(1 - space_position, 0, 1, SOUND_VOLUME_MIN, SOUND_VOLUME_MAX);
-  double sound_right_pwr = mapDouble(space_position, 0, 1, SOUND_VOLUME_MIN, SOUND_VOLUME_MAX);
-  sound_left_pwr += sound_volume_coef;
-  sound_right_pwr += sound_volume_coef;
-
-  MP3player.setVolume(sound_left_pwr, sound_right_pwr);
-
-  if (MP3player.isPlaying() == 0)
+  time_from_start_sound = millis();
+  if ((time_from_start_sound - time_from_start_prev_sound) > 100)
   {
-    MP3player.playTrack(audio_index);
-  };
+    time_from_start_prev_sound = time_from_start_sound;
+
+    double sound_left_pwr = mapDouble(1 - space_position, 0, 1, SOUND_VOLUME_MIN, SOUND_VOLUME_MAX);
+    double sound_right_pwr = mapDouble(space_position, 0, 1, SOUND_VOLUME_MIN, SOUND_VOLUME_MAX);
+    sound_left_pwr += sound_volume_coef;
+    sound_right_pwr += sound_volume_coef;
+
+    MP3player.setVolume(sound_left_pwr, sound_right_pwr);
+
+    if (MP3player.isPlaying() == 0)
+    {
+      MP3player.playTrack(audio_index);
+    };
+  }
 }
+#endif
 
 // ============================================================
 // ARDUINO
@@ -310,26 +351,31 @@ void proceedSound()
 
 void setup()
 {
-  Serial.begin(9600);
+  // Serial.begin(9600);
+  // Serial.begin(115200);
 
-  pinMode(PIN_LED, OUTPUT);
-  pinMode(PIN_VIBRO_LEFT, OUTPUT);
-  pinMode(PIN_VIBRO_RIGHT, OUTPUT);
+  // LED setup --------------------------------
+  pinMode(A_PIN_LED, OUTPUT);
 
-  pinMode(PIN_BTN_PREV, INPUT);
-  pinMode(PIN_BTN_NEXT, INPUT);
-
-  // LED setup
-#if defined(MICROLED)
+#if defined(USE_MICROLED)
   strip.setMaxCurrent(2000);
 #else
-  FastLED.addLeds<WS2812B, PIN_LED, GRB>(leds, LEDS_COUNT);
+  FastLED.addLeds<WS2812B, A_PIN_LED, GRB>(leds, LEDS_COUNT);
   // FastLED.setCorrection( TypicalLEDStrip );
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
 #endif
 
+  // VIBRO setup --------------------------------
+  pinMode(PIN_VIBRO_LEFT, OUTPUT);
+  pinMode(PIN_VIBRO_RIGHT, OUTPUT);
+
+  // AUDIO setup --------------------------------
+#if defined(USE_SFEMP3Shield)
+  pinMode(PIN_BTN_PREV, INPUT);
+  pinMode(PIN_BTN_NEXT, INPUT);
+
   //Initialize the SdCard.
-  if (!sd.begin(SD_SEL, SPI_FULL_SPEED))
+  if (!sd.begin(SD_SEL, SPI_HALF_SPEED))
     sd.initErrorHalt();
   // depending upon your SdCard environment, SPI_HAVE_SPEED may work better.
   if (!sd.chdir("/"))
@@ -347,23 +393,28 @@ void setup()
 
   // Initialize Audio
   MP3player.begin();
+  // MP3player.playTrack(1);
+  // MP3player.setVolume(20,50);
+#endif
 }
 
 void loop()
 {
   checkButtons();
-
   updateControledParams();
   updateIterationProgress();
   updateSpacePosition();
 
-#if defined(MICROLED)
+#if defined(USE_MICROLED)
   proceedLEDmicroLED();
 #else
   proceedLEDFastLED();
-#endif
   // proceedLEDByPosition();
+#endif
 
   proceedVibro();
+
+#if defined(USE_SFEMP3Shield)
   proceedSound();
+#endif
 }
